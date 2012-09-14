@@ -6,8 +6,13 @@
 
 from optparse import OptionParser
 import XenAPI
-import sqlite as sqlite3
+import MySQLdb
 import sys
+
+try:
+    import sqlite as sqlite3
+except ImportError, e:
+    import sqlite3
 
 try:
     xcplab = __import__(sys.argv[1])
@@ -294,12 +299,24 @@ def deleteLab(xapi, sqlCur, configLab):
 configLab = xcplab.configLab
 config = xcpconf.config
 
-if config['debug']:
-    print "Connect to sqlite db: " + config['SQLiteBase']
+if config['SQLEngenie'] == "SQLite":
+    if config['debug']:
+        print "Connect to sqlite db: " + config['SQLiteBase']
 
-SQLConnect = sqlite3.connect(config['SQLiteBase'])
-SQLConnect.isolation_level = None
-SQLCursor = SQLConnect.cursor()
+    SQLConnect = sqlite3.connect(config['SQLiteBase'])
+    SQLConnect.isolation_level = None
+    SQLCursor = SQLConnect.cursor()
+
+elif config['SQLEngenie'] == "MySQL":
+    if config['debug']:
+        print "Connect to mysql db: %s, host: %s, user %s" % (config['SQLDB'], config['SQLHost'], config['SQLUser'])
+
+    SQLConnect = MySQLdb.connect(host=config['SQLHost'], user=config['SQLUser'], passwd=config['SQLPassword'],
+        db=config['SQLDB'], charset='utf8')
+    SQLCursor = SQLConnect.cursor()
+else:
+    print "No select valid DB engenie"
+    pass
 
 if config['debug']:
     print "Connect to xcp master host: " + config['PoolMasterHost'] + ", user: " + config['PoolLogin']
