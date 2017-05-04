@@ -4,7 +4,6 @@
 ### Main module
 ###
 
-from optparse import OptionParser
 import XenAPI
 import MySQLdb
 import sys
@@ -296,10 +295,62 @@ def deleteLab(xapi, sqlCur, configLab):
 
             return
 
+
+def deleteOddRows(xapi, sqlCur):
+    ##
+    ## Delete all rows from database with VM UUIDs that are not in pool now
+    ##
+
+    ## Get all VM UUIDs from pool
+    #
+    xVMs = xapi.VM.get_all_records().items()
+
+    #save special rights as '-' and '*'
+    poolIDs = ['-', '*']
+    for opaque_ref, vm in xVMs:
+        poolIDs.append(vm["uuid"])
+    #
+
+    ## Get all UUIDs from database
+    #
+    sqlCur.execute("select vmname from xvpusers.xvp_users")
+    sqlIDs = [i[0] for i in list(sqlCur)]
+    #
+
+    ## Convert to string
+    #
+    if isinstance(sqlIDs[1], unicode):
+        sqlIDs = [x.encode('UTF8') for x in sqlIDs]
+    if isinstance(poolIDs[1], unicode):
+        poolIDs = [x.encode('UTF8') for x in poolIDs]
+
+    if config['debug']:
+        print 'sqlIDs length: ', len(sqlIDs)
+        print 'poolIDs length: ', len(poolIDs)
+    #
+
+    ## Get all odd IDs that are in database but bot in pool and delete them from db
+    #
+    oddIDs = [x for x in sqlIDs if x not in poolIDs]
+    if config['debug']:
+        print 'oddIDs', oddIDs
+
+    if len(oddIDs) == 0:
+        if config['debug']:
+            print 'Nothing to delete'
+        return
+
+    format_strings = ','.join(['%s'] * len(oddIDs))
+    sqlCur.execute("delete from xvpusers.xvp_users where vmname in (%s)" % format_strings, tuple(oddIDs))
+    #
+
+    return
+
+
 configLab = xcplab.configLab
 config = xcpconf.config
 
-if config['SQLEngenie'] == "SQLite":
+if config['SQLEngine'] == "SQLite":
     if config['debug']:
         print "Connect to sqlite db: " + config['SQLiteBase']
 
@@ -307,7 +358,7 @@ if config['SQLEngenie'] == "SQLite":
     SQLConnect.isolation_level = None
     SQLCursor = SQLConnect.cursor()
 
-elif config['SQLEngenie'] == "MySQL":
+elif config['SQLEngine'] == "MySQL":
     if config['debug']:
         print "Connect to mysql db: %s, host: %s, user %s" % (config['SQLDB'], config['SQLHost'], config['SQLUser'])
 
@@ -330,5 +381,7 @@ if configLab['action'] == "create":
     createLab(xapi, SQLCursor, configLab, config)
 elif configLab['action'] == "delete":
     deleteLab(xapi, SQLCursor, configLab)
+elif configLab['action'] == "clean":
+    deleteOddRows(xapi, SQLCursor)
 
 SQLConnect.commit()

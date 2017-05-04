@@ -8,7 +8,7 @@
 
 config = {
     'SQLEngenie':       "MySQL", # or "SQLite",
-    'SQLiteBase':       "<path_to_db>"
+    'SQLiteBase':       "<path_to_db>",
     'SQLHost':          "<db_host>",
     'SQLUser':          "<db_user>",
     'SQLPassword':      "<db_password>",
