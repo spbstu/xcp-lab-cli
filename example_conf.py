@@ -3,8 +3,9 @@
 ########################
 
 configLab = {
-    'action':       "create",         # create, delete
+    'action':       "create",         # create, delete, clean
     #'action':       "delete",
+    #'action':       "clean",
     'poolName':     "Main0",
     'domainKrb':    "AVALON.RU",
     'users':        [
