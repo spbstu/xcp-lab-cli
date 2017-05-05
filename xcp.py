@@ -75,42 +75,42 @@ def createVM(xapi, strUser, cfgVM, objForVM, configLab):
         return False
     if config['debug']:
         print "Delete VIFs cloned VM"
-        objVIFs = xapi.VIF.get_all_records()
-        for objVIF in objVIFs:
-            record = objVIFs[objVIF]
-            if record["VM"] == objVM:
-                xapi.VIF.destroy(objVIF)
-        if config['debug']:
-            print "Create VIF for vm: " + strVM
-        for network in cfgVM['networks']:
-            cfgVIF = {
-            'device': '0',
-            'network': objForVM['networks'][network],
-            'VM': objVM,
-            'MAC': "",
-            'MTU': "1500",
-            'qos_algorithm_type': "",
-            'qos_algorithm_params': {},
-            'other_config': {}
-            }
-            objVIF = xapi.VIF.create(cfgVIF)
-            if not objVIF:
-                print "VIF not create for vm: " + strVM
-                xapi.VM.destroy(objVM)
-                return False
-        if config['debug']:
-            print "Set tags for vm: " + strVM
-        cfgTags = []
-        for tag in cfgVM['tags']:
-            cfgTags.append(configLab['tags'][tag])
-        xapi.VM.set_tags(objVM, cfgTags)
-        cfgOtherConfig = xapi.VM.get_other_config(objVM)
-        cfgOtherConfig['folder'] = configLab['folders'][cfgVM['folder']]
-        xapi.VM.set_other_config(objVM, cfgOtherConfig)
-        if config['debug']:
-            print "Provision vm: " + strVM
-        xapi.VM.provision(objVM)
-        return objVM
+    objVIFs = xapi.VIF.get_all_records()
+    for objVIF in objVIFs:
+        record = objVIFs[objVIF]
+        if record["VM"] == objVM:
+            xapi.VIF.destroy(objVIF)
+    if config['debug']:
+        print "Create VIF for vm: " + strVM
+    for network in cfgVM['networks']:
+        cfgVIF = {
+        'device': '0',
+        'network': objForVM['networks'][network],
+        'VM': objVM,
+        'MAC': "",
+        'MTU': "1500",
+        'qos_algorithm_type': "",
+        'qos_algorithm_params': {},
+        'other_config': {}
+        }
+        objVIF = xapi.VIF.create(cfgVIF)
+        if not objVIF:
+            print "VIF not create for vm: " + strVM
+            xapi.VM.destroy(objVM)
+            return False
+    if config['debug']:
+        print "Set tags for vm: " + strVM
+    cfgTags = []
+    for tag in cfgVM['tags']:
+        cfgTags.append(configLab['tags'][tag])
+    xapi.VM.set_tags(objVM, cfgTags)
+    cfgOtherConfig = xapi.VM.get_other_config(objVM)
+    cfgOtherConfig['folder'] = configLab['folders'][cfgVM['folder']]
+    xapi.VM.set_other_config(objVM, cfgOtherConfig)
+    if config['debug']:
+        print "Provision vm: " + strVM
+    xapi.VM.provision(objVM)
+    return objVM
 
 
 def deleteRightsXVP(sqlCur, strUser, strVM, configLab):
@@ -179,6 +179,45 @@ def createRightsXVP(sqlCur, strUser, strVM, config, configLab):
     return True
 
 
+def addTrainerRightsXVP(sqlCur, strUser, config, configLab):
+    strUser = strUser.lower()
+
+    # get all tags start with 'group ' and remove 'group ' from them
+    tags = [val[6:] for key, val in configLab['tags'].values() if 'group ' in val]
+    if len(tags) == 0:
+        print "groups not found!"
+        return None
+
+    if config['debug']:
+        print "set trainer " + strUser + "@" + configLab['domainKrb'] + " for courses: " + ', '.join(tags)
+
+    if config['debug']:
+        print tags
+
+    for tag in tags:
+        sqlCur.execute("""
+        select * from xvp_users
+        where groupname = %s
+        and vmname = %s
+        and username = %s
+        """, (tag, "'*'", strUser + "@" + configLab['domainKrb']))
+
+        if config['debug']:
+            print "tag " + tag + " exist:"
+            print sqlCur.rowcount
+
+        if len(sqlCur.fetchall()) == 0:
+            sqlCur.execute("""
+                insert into xvp_users
+                values (%s, %s, %s, %s, %s)
+                """, (strUser + "@" + configLab['domainKrb'], configLab['poolName'], tag, '*', 'all'))
+            if config['debug']:
+                print "trainer for " + tag + " added:"
+                print sqlCur.rowcount
+    return True
+
+
+
 def createLab(xapi, sqlCur, configLab, config):
     if config['debug']:
         print "Collect object for VM"
@@ -230,6 +269,18 @@ def createLab(xapi, sqlCur, configLab, config):
         print "Create lab objects"
 
     ##
+    ## Set trainer
+    ##
+
+    if configLab['trainer']:
+        if config['debug']:
+            print "adding trainer " + configLab['trainer']
+        res = addTrainerRightsXVP(sqlCur, configLab['trainer'], config, configLab)
+        if not res:
+            print "trainer not created!"
+
+
+    ##
     ## Create lab
     ##
 
@@ -248,7 +299,7 @@ def createLab(xapi, sqlCur, configLab, config):
 
                 continue
             if config['debug']:
-                print "Cretate vm: " + strVM
+                print "Create vm: " + strVM
             ref = createVM(xapi, strUser, cfgVM, objForVM, configLab)
             if not ref:
                 print "VM: " + strVM + " Not create!!!"
@@ -366,7 +417,7 @@ elif config['SQLEngine'] == "MySQL":
         db=config['SQLDB'], charset='utf8')
     SQLCursor = SQLConnect.cursor()
 else:
-    print "No select valid DB engenie"
+    print "No select valid DB engine"
     pass
 
 if config['debug']:
