@@ -4,7 +4,6 @@
 ### Main module
 ###
 
-from optparse import OptionParser
 import XenAPI
 import MySQLdb
 import sys
@@ -76,42 +75,42 @@ def createVM(xapi, strUser, cfgVM, objForVM, configLab):
         return False
     if config['debug']:
         print "Delete VIFs cloned VM"
-        objVIFs = xapi.VIF.get_all_records()
-        for objVIF in objVIFs:
-            record = objVIFs[objVIF]
-            if record["VM"] == objVM:
-                xapi.VIF.destroy(objVIF)
-        if config['debug']:
-            print "Create VIF for vm: " + strVM
-        for network in cfgVM['networks']:
-            cfgVIF = {
-            'device': '0',
-            'network': objForVM['networks'][network],
-            'VM': objVM,
-            'MAC': "",
-            'MTU': "1500",
-            'qos_algorithm_type': "",
-            'qos_algorithm_params': {},
-            'other_config': {}
-            }
-            objVIF = xapi.VIF.create(cfgVIF)
-            if not objVIF:
-                print "VIF not create for vm: " + strVM
-                xapi.VM.destroy(objVM)
-                return False
-        if config['debug']:
-            print "Set tags for vm: " + strVM
-        cfgTags = []
-        for tag in cfgVM['tags']:
-            cfgTags.append(configLab['tags'][tag])
-        xapi.VM.set_tags(objVM, cfgTags)
-        cfgOtherConfig = xapi.VM.get_other_config(objVM)
-        cfgOtherConfig['folder'] = configLab['folders'][cfgVM['folder']]
-        xapi.VM.set_other_config(objVM, cfgOtherConfig)
-        if config['debug']:
-            print "Provision vm: " + strVM
-        xapi.VM.provision(objVM)
-        return objVM
+    objVIFs = xapi.VIF.get_all_records()
+    for objVIF in objVIFs:
+        record = objVIFs[objVIF]
+        if record["VM"] == objVM:
+            xapi.VIF.destroy(objVIF)
+    if config['debug']:
+        print "Create VIF for vm: " + strVM
+    for network in cfgVM['networks']:
+        cfgVIF = {
+        'device': '0',
+        'network': objForVM['networks'][network],
+        'VM': objVM,
+        'MAC': "",
+        'MTU': "1500",
+        'qos_algorithm_type': "",
+        'qos_algorithm_params': {},
+        'other_config': {}
+        }
+        objVIF = xapi.VIF.create(cfgVIF)
+        if not objVIF:
+            print "VIF not create for vm: " + strVM
+            xapi.VM.destroy(objVM)
+            return False
+    if config['debug']:
+        print "Set tags for vm: " + strVM
+    cfgTags = []
+    for tag in cfgVM['tags']:
+        cfgTags.append(configLab['tags'][tag])
+    xapi.VM.set_tags(objVM, cfgTags)
+    cfgOtherConfig = xapi.VM.get_other_config(objVM)
+    cfgOtherConfig['folder'] = configLab['folders'][cfgVM['folder']]
+    xapi.VM.set_other_config(objVM, cfgOtherConfig)
+    if config['debug']:
+        print "Provision vm: " + strVM
+    xapi.VM.provision(objVM)
+    return objVM
 
 
 def deleteRightsXVP(sqlCur, strUser, strVM, configLab):
@@ -180,6 +179,59 @@ def createRightsXVP(sqlCur, strUser, strVM, config, configLab):
     return True
 
 
+def addTrainerRightsXVP(sqlCur, strUser, config, configLab):
+    strUser = strUser.lower()
+
+    # get all tags start with 'group ' and remove 'group ' from them
+    tags = [val[6:] for val in configLab['tags'].values() if 'group ' in val]
+    if len(tags) == 0:
+        print "groups not found!"
+        return None
+
+    if config['debug']:
+        print "set trainer " + strUser + "@" + configLab['domainKrb'] + " for courses: " + ', '.join(tags)
+        print tags
+
+    for tag in tags:
+        sqlCur.execute("""
+        select * from xvp_users
+        where groupname = %s
+        and vmname = %s
+        and username = %s
+        """, (tag, "'*'", strUser + "@" + configLab['domainKrb']))
+
+        if config['debug']:
+            print "tag " + tag + " exist:"
+            print sqlCur.rowcount
+
+        if len(sqlCur.fetchall()) == 0:
+            sqlCur.execute("""
+                insert into xvp_users
+                values (%s, %s, %s, %s, %s)
+                """, (strUser + "@" + configLab['domainKrb'], configLab['poolName'], tag, '*', 'all'))
+            if config['debug']:
+                print "trainer for " + tag + " added:"
+                print sqlCur.rowcount
+
+    # add trainer's "none" rights
+    sqlCur.execute("""
+    		select * from xvp_users
+    		where username = %s
+    		and rights = %s""", (strUser + "@" + configLab['domainKrb'], 'none',))
+    if config['debug']:
+        print "Result exec SQL found 'none' rights: "
+        print sqlCur.rowcount
+    if len(sqlCur.fetchall()) == 0:
+        sqlCur.execute("""
+    			insert into xvp_users
+    			values (%s, %s, %s, %s, %s)""",
+                       (strUser + "@" + configLab['domainKrb'], configLab['poolName'], '-', '-', 'none'))
+        if config['debug']:
+            print "Result exec SQL add 'none' rights:"
+            print sqlCur.rowcount
+    return True
+
+
 def createLab(xapi, sqlCur, configLab, config):
     if config['debug']:
         print "Collect object for VM"
@@ -231,6 +283,18 @@ def createLab(xapi, sqlCur, configLab, config):
         print "Create lab objects"
 
     ##
+    ## Set trainer
+    ##
+
+    if configLab['trainer']:
+        if config['debug']:
+            print "adding trainer " + configLab['trainer']
+        res = addTrainerRightsXVP(sqlCur, configLab['trainer'], config, configLab)
+        if not res:
+            print "trainer not created!"
+
+
+    ##
     ## Create lab
     ##
 
@@ -249,7 +313,7 @@ def createLab(xapi, sqlCur, configLab, config):
 
                 continue
             if config['debug']:
-                print "Cretate vm: " + strVM
+                print "Create vm: " + strVM
             ref = createVM(xapi, strUser, cfgVM, objForVM, configLab)
             if not ref:
                 print "VM: " + strVM + " Not create!!!"
@@ -296,10 +360,62 @@ def deleteLab(xapi, sqlCur, configLab):
 
             return
 
+
+def deleteOddRows(xapi, sqlCur):
+    ##
+    ## Delete all rows from database with VM UUIDs that are not in pool now
+    ##
+
+    ## Get all VM UUIDs from pool
+    #
+    xVMs = xapi.VM.get_all_records().items()
+
+    #save special rights as '-' and '*'
+    poolIDs = ['-', '*']
+    for opaque_ref, vm in xVMs:
+        poolIDs.append(vm["uuid"])
+    #
+
+    ## Get all UUIDs from database
+    #
+    sqlCur.execute("select vmname from xvpusers.xvp_users")
+    sqlIDs = [i[0] for i in list(sqlCur)]
+    #
+
+    ## Convert to string
+    #
+    if isinstance(sqlIDs[1], unicode):
+        sqlIDs = [x.encode('UTF8') for x in sqlIDs]
+    if isinstance(poolIDs[1], unicode):
+        poolIDs = [x.encode('UTF8') for x in poolIDs]
+
+    if config['debug']:
+        print 'sqlIDs length: ', len(sqlIDs)
+        print 'poolIDs length: ', len(poolIDs)
+    #
+
+    ## Get all odd IDs that are in database but bot in pool and delete them from db
+    #
+    oddIDs = [x for x in sqlIDs if x not in poolIDs]
+    if config['debug']:
+        print 'oddIDs', oddIDs
+
+    if len(oddIDs) == 0:
+        if config['debug']:
+            print 'Nothing to delete'
+        return
+
+    format_strings = ','.join(['%s'] * len(oddIDs))
+    sqlCur.execute("delete from xvpusers.xvp_users where vmname in (%s)" % format_strings, tuple(oddIDs))
+    #
+
+    return
+
+
 configLab = xcplab.configLab
 config = xcpconf.config
 
-if config['SQLEngenie'] == "SQLite":
+if config['SQLEngine'] == "SQLite":
     if config['debug']:
         print "Connect to sqlite db: " + config['SQLiteBase']
 
@@ -307,7 +423,7 @@ if config['SQLEngenie'] == "SQLite":
     SQLConnect.isolation_level = None
     SQLCursor = SQLConnect.cursor()
 
-elif config['SQLEngenie'] == "MySQL":
+elif config['SQLEngine'] == "MySQL":
     if config['debug']:
         print "Connect to mysql db: %s, host: %s, user %s" % (config['SQLDB'], config['SQLHost'], config['SQLUser'])
 
@@ -315,8 +431,9 @@ elif config['SQLEngenie'] == "MySQL":
         db=config['SQLDB'], charset='utf8')
     SQLCursor = SQLConnect.cursor()
 else:
-    print "No select valid DB engenie"
-    pass
+    SQLCursor = None
+    print "No select valid DB engine"
+    sys.exit(1)
 
 if config['debug']:
     print "Connect to xcp master host: " + config['PoolMasterHost'] + ", user: " + config['PoolLogin']
@@ -330,5 +447,7 @@ if configLab['action'] == "create":
     createLab(xapi, SQLCursor, configLab, config)
 elif configLab['action'] == "delete":
     deleteLab(xapi, SQLCursor, configLab)
+elif configLab['action'] == "clean":
+    deleteOddRows(xapi, SQLCursor)
 
 SQLConnect.commit()

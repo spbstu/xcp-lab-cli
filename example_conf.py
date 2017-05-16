@@ -3,10 +3,12 @@
 ########################
 
 configLab = {
-    'action':       "create",         # create, delete
+    'action':       "create",         # create, delete, clean
     #'action':       "delete",
+    #'action':       "clean",
     'poolName':     "Main0",
     'domainKrb':    "AVALON.RU",
+    'trainer' : '', #login for person who will be able to see and rule any VM of this lab (with such group tag)
     'users':        [
         "ARTZAB",
         "TEST"
