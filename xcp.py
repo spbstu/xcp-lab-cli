@@ -183,15 +183,13 @@ def addTrainerRightsXVP(sqlCur, strUser, config, configLab):
     strUser = strUser.lower()
 
     # get all tags start with 'group ' and remove 'group ' from them
-    tags = [val[6:] for key, val in configLab['tags'].values() if 'group ' in val]
+    tags = [val[6:] for val in configLab['tags'].values() if 'group ' in val]
     if len(tags) == 0:
         print "groups not found!"
         return None
 
     if config['debug']:
         print "set trainer " + strUser + "@" + configLab['domainKrb'] + " for courses: " + ', '.join(tags)
-
-    if config['debug']:
         print tags
 
     for tag in tags:
@@ -214,8 +212,24 @@ def addTrainerRightsXVP(sqlCur, strUser, config, configLab):
             if config['debug']:
                 print "trainer for " + tag + " added:"
                 print sqlCur.rowcount
-    return True
 
+    # add trainer's "none" rights
+    sqlCur.execute("""
+    		select * from xvp_users
+    		where username = %s
+    		and rights = %s""", (strUser + "@" + configLab['domainKrb'], 'none',))
+    if config['debug']:
+        print "Result exec SQL found 'none' rights: "
+        print sqlCur.rowcount
+    if len(sqlCur.fetchall()) == 0:
+        sqlCur.execute("""
+    			insert into xvp_users
+    			values (%s, %s, %s, %s, %s)""",
+                       (strUser + "@" + configLab['domainKrb'], configLab['poolName'], '-', '-', 'none'))
+        if config['debug']:
+            print "Result exec SQL add 'none' rights:"
+            print sqlCur.rowcount
+    return True
 
 
 def createLab(xapi, sqlCur, configLab, config):
@@ -417,8 +431,9 @@ elif config['SQLEngine'] == "MySQL":
         db=config['SQLDB'], charset='utf8')
     SQLCursor = SQLConnect.cursor()
 else:
+    SQLCursor = None
     print "No select valid DB engine"
-    pass
+    sys.exit(1)
 
 if config['debug']:
     print "Connect to xcp master host: " + config['PoolMasterHost'] + ", user: " + config['PoolLogin']
