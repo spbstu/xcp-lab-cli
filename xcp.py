@@ -358,7 +358,7 @@ def deleteLab(xapi, sqlCur, configLab):
             if config['debug']:
                 print "Rights for VM: " + strVM + " on the user: " + strUser + " deleted!"
 
-            return
+    return
 
 
 def deleteOddRows(xapi, sqlCur):
